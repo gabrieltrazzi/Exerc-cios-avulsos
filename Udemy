@@ -1,0 +1,42 @@
+#R language
+#Agrupamentos
+
+cluster<-kmeans(iris[1:4],centers = 3)
+cluster
+table(iris$Species,cluster$cluster)
+plot(iris[,1:4],col=cluster$cluster)
+install.packages("cluster")
+library(cluster)
+clust<- pam(iris[,1:4],k=3)
+plot(clust)
+
+#Rede Neural
+install.packages("neuralnet")
+library(neuralnet)
+myiris=iris
+myiris<-cbind(myiris,myiris$Species=='setosa')
+myiris<-cbind(myiris,myiris$Species=='versicolor')
+myiris<-cbind(myiris,myiris$Species=='virginica')
+names(myiris) [6]='setosa'
+names(myiris) [7]='versicolor'
+names(myiris) [8]='virginica'
+amostras<-sample(2,150,replace = T,prob = c(0.7,0.3))
+mytreino<-myiris[amostras==1,]
+myteste<-myiris[amostras==2,]
+View(mytreino)
+dim(myteste)
+dim(mytreino)
+mod<-neuralnet(setosa + versicolor + virginica ~ 
+                 Sepal.Length + Sepal.Width + Petal.Length + Petal.Width,
+               mytreino, hidden = c(5,4))
+plot(mod)
+testar<-compute(mod,myteste[,1:4])
+testar$net.result
+result<-as.data.frame(testar$net.result)
+names(result)[1]='setosa'
+names(result)[2]='versicolor'
+names(result)[3]='virginica'
+
+result$class<-colnames(result[,1:3])[max.col(result[,1:3],ties.method = 'first')]
+a<-table(result$class,myteste$Species)
+sum(diag(a)/sum(a))
