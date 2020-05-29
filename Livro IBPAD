@@ -1,0 +1,144 @@
+#https://cdr.ibpad.com.br/cdr-intro.pdf
+#R language
+
+View(senado)
+summary(senado)
+library(dplyr)
+#CAP4
+#1
+senado2<-na.omit(senado)
+senado3<-filter(senado,senado$State!="NA")
+
+#Testando a transformação
+View(senado3)
+length(senado3$State[is.na(senado3$State)==TRUE])
+
+#2
+coal<-subset(senado2$Party,senado2$GovCoalition==TRUE)
+notcoal<-subset(senado2$Party,senado2$GovCoalition==FALSE)
+unique(coal)
+unique(notcoal)
+coal2<-filter(senado2,senado2$GovCoalition==TRUE)
+unique(coal2$Party)
+
+
+
+#3
+library(sqldf)
+resp<-sqldf("SELECT Party, SenatorUpper from senado2")
+View(resp)
+table1<-resp%>%
+  group_by(Party)%>%
+  summarise(Contagem=n_distinct(SenatorUpper))%>%
+  arrange(Contagem)
+
+View(table1)
+#4
+
+View(senado2)
+table2<-senado2%>%
+  group_by(Party)%>%
+  summarise(contag= sum(Vote=='S'))%>%
+  arrange(contag)
+table2
+
+#5
+senado2$região<-ifelse(senado2$State %in% c("AM","AC","RR","RO","PA","AP","TO"),"Norte",
+                       ifelse(senado2$State %in% c("MA","CE","PI","PB","RN","PE","BA","SE","AL"),"Nordeste",
+                        ifelse(senado2$State %in% c("ES","MG","SP","RJ"),"Sudeste",
+                               ifelse(senado2$State %in% c("MT","MS","GO","DF"),"Centro",
+                                      ifelse(senado2$State %in% c("RS","SC","PR"),"Sul","NA")))))
+
+View(senado2) 
+
+table3<-senado2%>%
+  group_by(região)%>%
+  summarise(contag=sum(Vote=='S'))%>%
+  arrange(contag)
+table3
+
+
+#CAP5
+
+install.packages(tidiv)
+
+View(USArrests)
+USArrests$state<-rownames(USArrests)
+USA.long<-USArrests%>%
+  gather(key="crime",value="valor",-state)
+USA.long
+
+#1
+install.packages("tidyverse")
+library(tidyr)
+library(dplyr)
+
+View(senado)
+senado.mod<-senado%>%
+  select(Vote,GovCoalition)%>%
+  mutate(tipo_coalisao = ifelse(GovCoalition, 'Coalisão', 'Não Coalisão'))%>%
+  mutate(tipo_voto = ifelse(Vote=='S','Voto sim', 'Voto Não'))%>%
+  select(tipo_voto,tipo_coalisao)
+View(senado.mod)
+
+senado.mod2<-senado.mod%>%
+  group_by(tipo_voto,tipo_coalisao)%>%
+  summarise(conta=n())%>%
+  spread(tipo_coalisao,conta)
+
+senado.mod2
+senado.mod3<-senado.mod2%>%
+  spread(tipo_coalisao,conta)
+
+#2
+cadastros <- data.frame(
+  email = c('joaodasilva@gmail.com', 'rafael@hotmail.com', 'maria@uol.com.br', 'juliana.morais@outlook.com'),
+  telefone = c('(61)99831-9482', '32 8976 2913', '62-9661-1234', '15-40192.5812'))
+  cadastros
+str_split(cadastros,fixed('@'))
+
+
+#CAP6
+#1
+install.packages("nycflights13")
+library(nycflights13)
+View(flights)
+View(airports)
+library(sqldf)
+
+resp<-flights%>%
+    inner_join(airports, by = c('origin'='faa'))%>%
+  inner_join(airports, by = c('dest'='faa'))
+colnames(resp)
+names(resp) [20]='Origem'
+names(resp) [27]='Destino'
+resp1<-resp%>%
+  group_by(Origem,Destino)%>%
+  summarise(qtde=n())%>%
+  select(Origem, Destino, qtde)%>%
+  arrange(-qtde)
+View(resp1)
+resp1
+
+#2
+participantes <- data.frame(
+  Nome = c('Carlos', 'Maurício', 'Ana Maria', 'Rebeca', 'Patrícia'),
+  Estado = c('Brasília', 'Minas Gerais', 'Goiás', 'São Paulo', 'Ceará'),
+  Idade = c(23, 24, 22, 29, 28)
+)
+aprovados <- data.frame(
+  Nome = c('Carlos', 'Patrícia'),
+  Pontuacao = c(61, 62)
+)
+eliminados <- data.frame(
+  Nome = c('Maurício', 'Ana Maria', 'Rebeca'),
+  Pontuacao = c(49, 48, 48)
+)
+tab<-participantes%>%
+  inner_join(aprovados, by = c("Nome"))
+tab2<-participantes%>%
+  inner_join(eliminados, by = c("Nome"))
+tab3<-tab%>%
+  bind_rows(tab2)
+tab3$Resultado<-ifelse(tab3$Pontuacao>50,"Aprovado","Reprovado")
+tab3
