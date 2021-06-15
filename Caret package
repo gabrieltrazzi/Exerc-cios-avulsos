@@ -1,0 +1,67 @@
+#Performing some Machine learning techniques with Caret Package R and Wine Quality
+#Source:https://archive.ics.uci.edu/ml/machine-learning-databases/wine-quality/
+
+#importing libraries
+Library(tidyverse)
+library(caret)
+library(readxl)
+library(plotly)
+
+#importing data
+red<-read_delim("https://archive.ics.uci.edu/ml/machine-learning-databases/wine-quality/winequality-red.csv",delim=";")
+white<-read_delim("https://archive.ics.uci.edu/ml/machine-learning-databases/wine-quality/winequality-white.csv",delim=";")
+wine<-rbind(red,white)
+
+# Fit random forest: model
+model <- train(
+  quality~.,
+  tuneLength = 1,
+  data = wine, 
+  method = "ranger",
+  trControl = trainControl(
+    method = "cv", 
+    number = 5, 
+    verboseIter = TRUE
+  )
+)
+#Evaluating
+model
+
+
+#Exploring higher tune length
+# Fit random forest: model2
+model2 <- train(
+  quality~.,
+  tuneLength = 3,
+  data = wine, 
+  method = "ranger",
+  trControl = trainControl(
+    method = "cv", 
+    number = 5, 
+    verboseIter = TRUE
+  )
+)
+
+#Evaluating
+model2
+
+# Train glmnet with custom trainControl and tuning: model
+model3 <- train(
+  y ~ ., 
+  overfit,
+  tuneGrid = expand.grid(
+    alpha = 0:1,
+    lambda = seq(0.0001, 1, length = 20)
+  ),
+  method = "glmnet",
+   trControl = trainControl(
+    method = "cv", 
+    number = 5, 
+    verboseIter = TRUE
+  )
+
+# Print model to console
+model3
+
+# Print maximum ROC statistic
+max(model3[["results"]][["ROC"]])
