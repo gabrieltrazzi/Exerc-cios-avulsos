@@ -1,0 +1,94 @@
+library(MASS)
+data<-Boston
+##
+#This is an analysis on house average price (medv) related to some features cited below:
+#crim - per capita crime rate by town. \
+#zn - proportion of residential land zoned for lots over 25,000 sq.ft. \
+#indus - proportion of non-retail business acres per town. \
+#chas - Charles River dummy variable (= 1 if tract bounds river; 0 otherwise). \
+#nox - nitrogen oxides concentration (parts per 10 million). \
+#rm - average number of rooms per dwelling. \
+#age - proportion of owner-occupied units built prior to 1940. \
+#dis - weighted mean of distances to five Boston employment centres. \
+#rad - index of accessibility to radial highways. \
+#tax - full-value property-tax rate per \$10,000. \
+#ptratio - pupil-teacher ratio by town. \
+#black - 1000(Bk − 0.63)2 where Bk is the proportion of blacks by town. \
+#lstat - lower status of the population (percent). \
+#medv - median value of owner-occupied homes in \$1000s. \
+
+#Here I'm evaluating some ML techniques to better predict medv.
+
+summary(data)
+dim(data)
+#no NA's
+
+cor(data)
+
+data.sc<-data.frame(scale(data))        
+#remove chas column
+names(data.frame(data.sc))
+data.sc<-data.sc[,-4]
+#Clusters
+df.k5<-kmeans(data.sc,centers=5)
+df.k6<-kmeans(data.sc,centers=6)
+df.k7<-kmeans(data.sc,centers=7)
+
+g1<-fviz_cluster(df.k5,geom = "point",data = data.sc)+ggtitle("K=5")
+g2<-fviz_cluster(df.k6,geom = "point",data = data.sc)+ggtitle("K=6")
+g3<-fviz_cluster(df.k7,geom = "point",data = data.sc)+ggtitle("K=7")
+##########
+
+##Data partitioning
+set.seed(0)
+index<-createDataPartition(data$crim,p=0.8,list = F)
+treino<-data[index,]
+teste<-data[-index,]
+
+#Model 1 - Linear
+
+model1<-lm(medv~.,data = treino)
+summary(model1)
+teste$pred1<-predict(model1,teste)
+RMSE(teste$pred1,teste$medv)
+ggplot(teste,aes(pred1,medv))+geom_point()+geom_abline()
+
+#Model 2 - Regression tree
+model2<-rpart(medv~.,treino,method = "anova")
+teste$pred2<-predict(model2,teste)
+RMSE(teste$pred2,teste$medv)
+ggplot(teste,aes(pred2,medv))+geom_point()+geom_abline()
+rpart.plot(model2)
+
+
+#Model 3 - xgboost
+model3 <- train(medv~.,
+                treino,
+                method="xgbTree",
+                trControl = trainControl(
+                  method = "cv", 
+                  number = 5, 
+                  verboseIter = F
+                ))
+summary(model3)
+teste$pred3<-predict(model3,teste)
+RMSE(teste$pred3,teste$medv)
+ggplot(teste,aes(pred3,medv))+geom_point()+geom_abline()
+
+varimp <- varImp(model3)
+plot(varimp)
+
+#Model 4 - Neuralnet
+
+max_data <- apply(data, 2, max) 
+min_data <- apply(data, 2, min)
+scaled <- scale(data,center = min_data, scale = max_data - min_data)
+
+treino.sc<-as.data.frame(scaled[index,])
+teste.sc<-as.data.frame(scaled[-index,])
+model4<- neuralnet(medv~.,data=treino.sc,hidden=c(5,4,3,2))
+pr.nn <- compute(model4,teste.sc[,1:13])
+pr.nn_ <- pr.nn$net.result*(max(data$medv)-min(data$medv))+min(data$medv)
+test.r <- (teste.sc$medv)*(max(data$medv)-min(data$medv))+min(data$medv)
+RMSE_nn <- sqrt(mean((pr.nn_ - test.r)^2))
+as.data.frame(cbind(pr.nn_,test.r))%>%ggplot(aes(V1,test.r))+geom_point()+geom_abline()
