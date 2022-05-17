@@ -1,0 +1,269 @@
+#This is an exercise on data modeling to practice fraud analysis/predictions and imbalanced datasets
+#Data from Kaggle dataset 
+#(https://www.kaggle.com/datasets/mlg-ulb/creditcardfraud?resource=download)
+
+#Importing libraries
+library(tidyverse)
+library(caret)
+
+
+setwd("C:/Users/gabriel.trazzi/Documents/R")
+#Get data
+data<-read.csv("creditcard.csv")
+str(data)
+summary(data)
+
+#Eliminating Time Column
+data<-data[,-1]
+data$Class<-as.factor(data$Class)
+levels(data$Class)[levels(data$Class)=='1'] <- 'Y'
+levels(data$Class)[levels(data$Class)=='0'] <- 'N'
+
+
+###Exploratory data analysis
+#Response variable
+
+data%>%select(Class)%>%
+  group_by(Class)%>%
+  summarise(y=n())%>%
+  ggplot(aes(Class, y=y, fill=Class)) + geom_bar(stat="identity") +
+  geom_text(aes(label=y), vjust=0)
+  
+table(data$Class)
+#It is possible to see a severe inbalance. It will need a resample strategy.
+
+#Features
+
+i=0
+for (i in 1:(ncol(data)-1)){
+  print(ggplot(data,aes(data[,i]))+geom_histogram()+ggtitle(i))
+  
+}
+#relationship between features
+j=0
+for (j in 1:(ncol(data)-1)){
+  print(ggplot(data,aes(x=Class,y=data[,j],group=Class))+geom_boxplot()+ggtitle(j))
+}
+
+#It is possible to see some variables that present different median to Class=1
+
+#####APPROACH 1 - Without any treatment, only modeling
+
+#split
+set.seed(0)
+index<-createDataPartition(data$V1,p=0.8,list = F)
+
+train1<-data[index,]
+test1<-data[-index,]
+
+control1 <-trainControl(
+  "cv",
+  number = 5,classProbs = T)
+
+table(train1$Class)
+#still very inbalanced
+
+#Logistic regression
+model1.0<-glm(Class~.,train1,family = "binomial")
+summary(model1.0)
+
+test1$pred1.0<-as.factor(ifelse(predict(model1.0,test1,type = "response")<=0.1,0,1))
+
+levels(test1$pred1.0)[levels(test1$pred1.0)=='1'] <- 'Y'
+levels(test1$pred1.0)[levels(test1$pred1.0)=='0'] <- 'N'
+confusionMatrix(test1$pred1.0,test1$Class)
+
+
+
+
+
+#SVM model
+
+
+model1.1 <- caret::train(Class~.,train1, method = "svmLinear3", 
+                  trControl = control1)
+model1.1
+
+test1$pred1.1<-predict(model1.1,test1)
+confusionMatrix(test1$pred1.1,test1$Class)
+######Best specificity in 77%
+
+
+###approach 1: undersampling - as the data sample has only 492 examples of Class = Y
+###the approach is to set the higher volume equal to the lower volume. So, the total
+###amount of data will be 984 rows, 492 for each factor level.
+
+#preparing data to approach 1
+x<-data[,-30]
+y<-as.factor(data[,30])
+levels(y)<-c('0','1')
+
+underdata<-ubBalance(x,y,type = "ubUnder")
+under<-cbind(underdata$X,underdata$Y)
+table(under$`underdata$Y`)
+#Now it is equivalent
+under$Class<-under$`underdata$Y`
+under<-under[,-30]
+
+levels(under$Class)[levels(under$Class)=='1'] <- 'Y'
+levels(under$Class)[levels(under$Class)=='0'] <- 'N'
+
+index2<-createDataPartition(under$V1,p=0.8,list = F)
+train2<-under[index2,]
+test2<-under[-index2,]
+
+model2.0<-glm(Class~.,train2,family = "binomial")
+summary(model2.0)
+test2$pred2.0<-as.factor(ifelse(predict(model2.0,test2,type = "response")<=0.1,0,1))
+levels(test2$pred2.0)[levels(test2$pred2.0)=='1'] <- 'Y'
+levels(test2$pred2.0)[levels(test2$pred2.0)=='0'] <- 'N'
+
+
+train_control<- trainControl(method = "cv", number = 5, search = "grid")
+confusionMatrix(test2$pred2.0,test2$Class)
+
+gbmGrid <-  expand.grid(max_depth = c(3, 5, 7), 
+                        nrounds = (1:10)*50,    # number of trees
+                        # default values below
+                        eta = 0.3,
+                        gamma = 0,
+                        subsample = 1,
+                        min_child_weight = 1,
+                        colsample_bytree = 0.6)
+
+model2.1<-caret::train(Class~.,train2,
+                       method = "svmLinear3", 
+                       trControl = control1)
+model2.1
+test2$pred2.1<-predict(model2.1,test2)
+confusionMatrix(test2$pred2.1,test2$Class)
+
+##Trying model2.1 in whole dataset
+data$pred1<-predict(model2.1,data)
+a<-confusionMatrix(data$pred1,data$Class)
+#BA = 95%
+#Sensi = 97% and speci = 92%
+a
+####Approach 2: oversampling
+overdata<-ubBalance(x,y,type = "ubOver",k=0)
+over<-cbind(overdata$X,overdata$Y)
+over$Class<-over$`overdata$Y`
+over<-over[,-30]
+
+levels(over$Class)[levels(over$Class)=='1'] <- 'Y'
+levels(over$Class)[levels(over$Class)=='0'] <- 'N'
+
+index3<-createDataPartition(over$V1,p=0.8,list = F)
+train3<-over[index3,]
+test3<-over[-index3,]
+
+model3.0<-glm(Class~.,train3,family = "binomial")
+test3$pred3.0<-as.factor(ifelse(predict(model3.0,test3,type = "response")<=0.1,0,1))
+levels(test3$pred3.0)[levels(test3$pred3.0)=='1'] <- 'Y'
+levels(test3$pred3.0)[levels(test3$pred3.0)=='0'] <- 'N'
+
+
+
+confusionMatrix(test3$pred3.0,test3$Class)
+
+model3.1<-caret::train(Class~.,train3,
+                       method = "svmLinear3", 
+                       trControl = control1)
+test3$pred3.1<-predict(model3.1,test3)
+confusionMatrix(test3$pred3.1,test3$Class)
+
+#Trying in whole model
+b<-confusionMatrix(predict(model3.1,data),data$Class)
+
+
+#Improving results in model 2.1
+
+model2.3<-caret::train(Class~.,train2,
+  method = "svmRadial",
+trControl = trainControl("cv", number = 10,classProbs = T),
+preProcess = c("center","scale"),
+tuneLength = 10)
+confusionMatrix(predict(model2.3,test2),test2$Class)
+d<-confusionMatrix(predict(model2.3,data),data$Class)
+d
+#nnet model
+nnGrid <-  expand.grid(.size=c(20), .decay = c(0, .005, .01, 0.015, 0.02, 0.025))
+
+model2.4<-caret::train(Class~.,train2,
+                       method = "nnet",
+                       tuneGrid = nnGrid,
+                       trControl = trainControl("cv", number = 10),
+                       preProcess = c("center","scale"),
+                       tuneLength = 10)
+
+
+e<-confusionMatrix(predict(model2.4,data),data$Class)
+a$table
+b$table
+d$table
+e$table
+
+eval <- function(model, model_name="modelo"){
+  p_train <- predict(model, train2, type='prob') 
+  c_train <- predict(model, train2)            
+  
+  #Base de teste
+  p_test <- predict(model, data, type='prob')
+  c_test <- predict(model, data)
+  
+  # Data frame de avaliação (Treino)
+  tr_ev_df <- data.frame(obs=train2$Class, 
+                            pred=c_train,
+                            Y = p_train[,2],
+                            N = 1-p_train[,2]
+  )
+  
+  # Data frame de avaliação (Teste)
+  ts_ev_df <- data.frame(obs=data$Class, 
+                           pred=c_test,
+                           Y = p_test[,2],
+                           N = 1-p_test[,2]
+  )
+  
+  tcs_tr <- caret::twoClassSummary(tr_ev_df, 
+                                       lev=levels(tr_ev_df$obs))
+  tcs_ts <- caret::twoClassSummary(ts_ev_df, 
+                                      lev=levels(ts_ev_df$obs))
+  ##########################
+  # Curva ROC              #
+  
+  CurvaROC <- ggplot2::ggplot(ts_ev_df, aes(d = obs, m = Y, colour='1')) + 
+    plotROC::geom_roc(n.cuts = 0, color="blue") +
+    plotROC::geom_roc(data=tr_ev_df,
+                      aes(d = obs, m = Y, colour='1'),
+                      n.cuts = 0, color = "red") +
+    scale_color_viridis_d(direction = -1, begin=0, end=.25) +
+    theme(legend.position = "none") +
+    ggtitle(paste("Curva ROC | ", model_name, " | AUC-treino=",
+                  percent(tcs_tr[1]),
+                  "| AUC_teste = ",
+                  percent(tcs_ts[1]))
+    )
+  #Train eval
+  print(tcs_tr)
+  #Test eval
+  print(tcs_ts)
+  CurvaROC
+}
+
+model2.5<-caret::train(Class~.,train2,
+                method = "xgbTree",
+                trControl = trainControl("cv", number = 5),
+                preProcess = c("center","scale"))
+
+eval(model2.1, model_name = "SVMLinear")
+eval(model2.3, model_name = "SVMRad")
+eval(model2.4, model_name = "NeuralNet")
+eval(model2.5, model_name = "xgb")
+confusionMatrix(predict(model2.5,data),data$Class)
+
+confusionMatrix(predict(model2.4,data),data$Class)
+recall(predict(model2.4,data),data$Class)
+precision(predict(model2.5,data),data$Class)
+
+#This model has 96% Recall on XGBoost
