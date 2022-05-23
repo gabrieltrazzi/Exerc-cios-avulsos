@@ -1,0 +1,153 @@
+###Reading data
+
+train<-read.table(
+  /PM_train.txt",
+  header = F)
+test<-read.table(
+ PM_test.txt",
+  header = F)
+
+#Adjusting Colnames for data sets
+names<-c("Asset_ID","Runtime","Setting1","Setting2","Setting3",
+         "Tag1","Tag2","Tag3","Tag4","Tag5","Tag6","Tag7","Tag8","Tag9",
+         "Tag10", "Tag11","Tag12","Tag13","Tag14","Tag15","Tag16","Tag17",
+         "Tag18","Tag19","Tag20","Tag21")
+colnames(train)<-names
+colnames(test)<-names
+
+##Evaluating the train data set
+summary(train)
+
+#RUL - creating RUL feature
+
+max_cycle<-data.frame(train%>%
+  dplyr::group_by(Asset_ID)%>%
+  dplyr::summarise(max(Runtime)))
+
+train<-merge(train,max_cycle,by.train="Asset_ID",by.max_cyle="Asset_ID")
+
+train$RUL<-train$max.Runtime.-train$Runtime
+
+
+##Preparing Test set
+#Assuming that is needed to predict at the end of cycle what is the RUL for each asset
+#And assuming we want to predict in test set the RUL based on sensors only
+
+max_cycle.test<-data.frame(test%>%
+                        dplyr::group_by(Asset_ID)%>%
+                        dplyr::summarise(max(Runtime)))
+
+test.model<-merge(test,max_cycle.test,by.test="Asset_ID",by.max_cycle.test="Asset_ID")
+test.model$RUL<-test.model$max.Runtime.-test.model$Runtime
+exlcude<-c("Asset_ID","Runtime","Setting1","Setting2","Setting3","max.Runtime.","RUL")
+
+test.model<-test.model%>%
+  dplyr::filter(RUL==0)
+
+#Understanding relevant variables
+
+i=1
+a<-names(train)
+for(i in 3:26){
+  print(train%>%
+    ggplot(aes(x=RUL,y=train[,i],color=Asset_ID))+geom_line()+ggtitle(a[i])+xlim(355,0)
+  )}
+
+##It is possible to see that sensors 
+##1, 5, 6, 10, 16, 18 and 19 hold no information 
+##related to RUL as the sensor values remain constant throughout time
+##These will be not considered in the model
+##Other modification is disconsider RUL greater than 130, once it seems
+##that in average all assets starts to have any variance lower than 130.
+
+##Models
+
+#Model1- Rpart
+
+remove_list<-c("Asset_ID","Runtime","Setting1","Setting2","Setting3",
+               "Tag1","Tag5","Tag6","Tag10","Tag16","Tag18","Tag19","max.Runtime.")
+
+train_df<-train%>%
+  dplyr::select(-all_of(remove_list))%>%
+  dplyr::filter(RUL<130)
+
+#Store model predictions
+Y<-data.frame(1:nrow(train_df))
+
+
+set.seed(420)
+##Model1 - Rpart
+
+
+model1<-rpart(RUL~.,train_df)
+summary(model1)
+Y$pred1<-predict(model1,train_df)
+
+RMSE(Y$pred1,train_df$RUL)
+caret::R2(Y$pred1,train_df$RUL)
+#RMSE=22.6
+#R2=0.64
+train_df%>%cbind(Y$pred1)%>%
+ggplot(aes(RUL,Y$pred1))+geom_point()
+
+
+
+##Model2 - Linear Regression
+model2<-lm(RUL~.,train_df)
+summary(model2)
+Y$pred2<-predict(model2,train_df)
+RMSE(Y$pred2,train_df$RUL)
+R2(Y$pred2,train_df$RUL)
+#RMSE=20.1
+#R2=0.71
+train_df%>%cbind(Y$pred2)%>%
+  ggplot(aes(RUL,Y$pred2))+geom_point()
+
+#Model3 - Xgboost
+model3 <- train(RUL~.,
+                train_df,
+                method="xgbTree",
+                trControl = trainControl(
+                  method = "cv", 
+                  number = 5, 
+                  verboseIter = TRUE
+                ))
+model3
+Y$pred3<-predict(model3,train_df)
+RMSE(Y$pred3,train_df$RUL)
+R2(Y$pred3,train_df$RUL)
+#RMSE=17.52
+#R2=0.78
+ggplotly(train_df%>%cbind(Y$pred3)%>%
+  ggplot(aes(RUL,Y$pred3))+geom_point(alpha = 0.5)+geom_abline())
+
+#Model4 Multi level regression
+exc<-c("Runtime","Setting1","Setting2","Setting3",
+       "Tag1","Tag5","Tag6","Tag10","Tag16","Tag18","Tag19","max.Runtime.")
+
+train.ML<-train%>%
+  dplyr::select(-all_of(exc))%>%
+  dplyr::filter(RUL<130)
+
+model4<-lme(RUL~Tag2+Tag3+Tag4+Tag7+Tag8+Tag9+
+              Tag11+Tag12+Tag13+Tag14+Tag15+Tag17+Tag20+Tag21,
+            random = ~ (Tag9:Tag14) | Asset_ID,
+            data=train.ML,
+            method="ML")
+
+summary(model4)
+head(train.ML)
+Y$pred4<-predict(model4,train.ML)
+RMSE(Y$pred4,train.ML$RUL)
+R2(Y$pred4,train.ML$RUL)
+#RMSE=15.07
+#R2=0.83
+train.ML%>%cbind(Y$pred4)%>%
+  ggplot(aes(RUL,Y$pred4))+geom_point()
+
+#Now, we predict RUL in test.model dataset with the best model (Model3)
+test.model1<-test.model%>%select(Tag1:Tag21)
+
+test.model$RUL_pred<-predict(model3,test.model1)
+
+result<-test.model%>%select(Asset_ID,RUL_pred)
